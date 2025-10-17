@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Working Time Calculator</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #f8fafc;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --muted: #94a3b8;
+      --green: #22c55e;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      margin: 0;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.3);
+      padding: 24px;
+      max-width: 1000px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    p.small { color: var(--muted); font-size: 0.9rem; }
+    textarea {
+      width: 100%;
+      height: 220px;
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      background: #334155;
+      color: var(--text);
+      font-family: monospace;
+      resize: vertical;
+    }
+    select, button {
+      border-radius: 10px;
+      border: none;
+      padding: 10px 16px;
+      font-size: 1rem;
+    }
+    select { background: #334155; color: var(--text); }
+    button { background: var(--accent); color: white; cursor: pointer; transition: background 0.2s; }
+    button:hover { background: var(--accent-hover); }
+    button.ghost { background: #334155; color: var(--text); }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 10px; overflow: auto; }
+    .progress-container { background: #334155; border-radius: 10px; overflow: hidden; margin-top: 12px; height: 20px; }
+    .progress-bar { background: var(--green); height: 100%; width: 0%; transition: width 0.4s; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>⏱️ Working Time Calculator</h1>
+    <p class="small">Paste your time logs (no need for “in/out”). Optionally include <code>rn time is ...</code>. This will show total worked time, remaining time to reach 8 hours, and your exact exit time.</p>
+
+    <label>Timing Log</label>
+    <textarea id="input" placeholder="Example:
+10:06:30 AM
+10:07:26 AM
+10:10:29 AM
+11:05:03 AM
+rn time is 07:00 PM"></textarea>
+
+    <div class="row">
+      <label for="tz">Timezone:</label>
+      <select id="tz">
+        <option value="local">Your Local Time</option>
+        <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+        <option value="UTC">UTC</option>
+        <option value="America/New_York">New York (EST/EDT)</option>
+        <option value="Europe/London">London</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <button id="calc">Calculate</button>
+      <button id="clear" class="ghost">Clear</button>
+      <button id="copy" class="ghost">Copy Results</button>
+    </div>
+
+    <div class="progress-container">
+      <div class="progress-bar" id="progress"></div>
+    </div>
+
+    <h3>Results</h3>
+    <pre id="summary">Paste timings and click Calculate.</pre>
+  </div>
+
+  <script>
+    const pad = n => n.toString().padStart(2,'0');
+    const fmt = ms => { const h = Math.floor(ms/3600000); const m = Math.floor((ms%3600000)/60000); return `${h}h ${pad(m)}m`; };
+    const parseTime = (str, base) => {
+      const d = new Date(base);
+      const m = str.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?/);
+      if(!m) return null;
+      let [_,h,mn,s,ap] = m;
+      h=+h; mn=+mn; s=+(s||0);
+      if(ap){ ap=ap.toUpperCase(); if(ap==='PM'&&h!==12)h+=12; if(ap==='AM'&&h===12)h=0; }
+      d.setHours(h,mn,s,0); return d;
+    };
+    const fmtTZ = (d,tz) => tz==='local'? d.toLocaleString(): d.toLocaleString('en-GB',{timeZone:tz});
+
+    document.getElementById('calc').onclick = () => {
+      const input = document.getElementById('input').value.trim();
+      const tz = document.getElementById('tz').value;
+      if(!input) return;
+      const lines = input.split(/\n+/).map(l=>l.trim()).filter(Boolean);
+      const today = new Date();
+      let times=[], nowLine=null;
+      for(let l of lines){
+        const rn = l.match(/rn\s*time\s*is\s*(.+)/i);
+        if(rn){ nowLine=parseTime(rn[1],today); continue; }
+        const t=parseTime(l,today);
+        if(t) times.push(t);
+      }
+      let pairs=[], lastIn=null;
+      for(let i=0;i<times.length;i++){
+        if(i%2===0) lastIn=times[i]; else pairs.push([lastIn,times[i]]);
+      }
+      if(times.length%2!==0){ pairs.push([times[times.length-1], nowLine||new Date()]); }
+
+      let total=0; pairs.forEach(([i,o])=>total+=o-i);
+      const target=8*3600000; const remain=Math.max(0,target-total);
+      const lastOut = pairs[pairs.length-1][1];
+      const leaveTime = new Date(lastOut.getTime()+remain);
+      const percent=Math.min(100,(total/target)*100);
+      document.getElementById('progress').style.width=percent+'%';
+
+      let out=[];
+      pairs.forEach(([i,o],idx)=> out.push(`${idx+1}. ${i.toLocaleTimeString()} → ${o.toLocaleTimeString()} (${fmt(o-i)})`));
+      out.push('');
+      out.push(`Total worked: ${fmt(total)}`);
+      out.push(`Remaining to reach 8h: ${fmt(remain)}`);
+      out.push(`You should leave at: `+fmtTZ(leaveTime,tz));
+
+      document.getElementById('summary').textContent=out.join('\n');
+    };
+
+    document.getElementById('clear').onclick=()=>{
+      document.getElementById('input').value='';
+      document.getElementById('summary').textContent='Cleared.';
+      document.getElementById('progress').style.width='0%';
+    };
+
+    document.getElementById('copy').onclick=()=>{
+      navigator.clipboard.writeText(document.getElementById('summary').textContent);
+      alert('Results copied to clipboard!');
+    };
+  </script>
+</body>
+</html>
